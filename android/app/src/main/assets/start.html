@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On Voie Tous</title>
+<style>
+    :root {
+        --accent: #9b1c2e; --accent-soft: #f6e7e9; --blue: #1f4e8c; --blue-soft: #e6edf7;
+        --bg: #f5f4f2; --surface: #ffffff; --text: #1d1f24; --muted: #5d6270; --border: #e2e0dc;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --accent: #d04a5c; --accent-soft: #33181d; --blue: #6d9fe0; --blue-soft: #172235;
+            --bg: #14161b; --surface: #1d2027; --text: #e8e8ec; --muted: #9a9fab; --border: #2d313b;
+        }
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+    .stripe { height: 4px; background: linear-gradient(90deg, var(--accent) 50%, var(--blue) 50%); }
+    main { max-width: 560px; margin: 0 auto; padding: 24px 16px 32px; }
+    h1 { margin: 0 0 4px; font-size: 26px; }
+    .lead { margin: 0 0 24px; color: var(--muted); }
+    h2 { margin: 24px 0 8px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    a.card {
+        display: block; padding: 14px 16px; margin-bottom: 10px; text-decoration: none; color: inherit;
+        background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+        border-radius: 10px;
+    }
+    a.card.blue { border-left-color: var(--blue); }
+    a.card strong { display: block; font-size: 17px; }
+    a.card span { color: var(--muted); font-size: 14px; }
+    a.card:active { background: var(--accent-soft); }
+    a.card.blue:active { background: var(--blue-soft); }
+    #recent:empty, #recent-title[hidden] { display: none; }
+    .note { margin-top: 28px; font-size: 13px; color: var(--muted); }
+    .note a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+<main>
+    <h1>On Voie Tous</h1>
+    <p class="lead">Gleisprognosen auf den Abfahrtstafeln von SNCF, RFI und Adif.</p>
+
+    <h2 id="recent-title" hidden>Zuletzt geöffnet</h2>
+    <div id="recent"></div>
+
+    <h2>Frankreich</h2>
+    <a class="card" href="https://www.garesetconnexions.sncf/fr/gares-services">
+        <strong>SNCF Gares &amp; Connexions</strong>
+        <span>Bahnhof suchen, dann „Horaires“ öffnen</span>
+    </a>
+
+    <h2>Italien</h2>
+    <a class="card blue" href="https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Home">
+        <strong>RFI Arrivi e Partenze</strong>
+        <span>Bahnhof auswählen, dann „Partenze“</span>
+    </a>
+
+    <h2>Spanien</h2>
+    <a class="card" href="https://www.adif.es/">
+        <strong>Adif</strong>
+        <span>Bahnhofsseite auf adif.es öffnen</span>
+    </a>
+    <a class="card blue" href="https://pantallas-estaciones.vercel.app/">
+        <strong>Pantallas estaciones</strong>
+        <span>Abfahrtstafeln der Adif-Bahnhöfe</span>
+    </a>
+
+    <p class="note">
+        Die Prognosen stammen vom Server des Originalprojekts
+        <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>.
+        Dorthin werden Bahnhof und Zugdaten der aufgerufenen Tafel geschickt.
+        Tipp: In Chrome eine Abfahrtsseite über „Teilen“ an diese App schicken.
+    </p>
+</main>
+<script>
+    // Filled in by the app: list of {url, title} for recently opened departure boards.
+    window.showRecent = function (items) {
+        const box = document.getElementById('recent');
+        box.replaceChildren();
+        for (const item of items) {
+            const a = document.createElement('a');
+            a.className = 'card blue';
+            a.href = item.url;
+            const strong = document.createElement('strong');
+            strong.textContent = item.title || item.url;
+            const span = document.createElement('span');
+            span.textContent = new URL(item.url).hostname;
+            a.append(strong, span);
+            box.append(a);
+        }
+        document.getElementById('recent-title').hidden = items.length === 0;
+    };
+</script>
+</body>
+</html>

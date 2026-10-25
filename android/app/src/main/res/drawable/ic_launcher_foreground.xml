@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Track with a question mark above it, after src/logo.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M39,80 L49,60 M69,80 L59,60"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M47,64 H61 M44.5,69.5 H63.5 M42,75 H66"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M47,37 A7,7 0 1,1 57.5,43 Q54,45 54,48.5 V50"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,55.5 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
+</vector>
