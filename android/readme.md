@@ -21,4 +21,4 @@ cd android
 gradle assembleRelease
 ```
 
-The signing key `app/signing.p12` is committed on purpose so that every build can update the installed app. Don't reuse it for anything published in a store.
+The APK is signed with a fixed key so that every build can update the installed app. The key is not in the repo: the workflow reads it from the repository secrets `ANDROID_KEYSTORE_BASE64` (the PKCS12 file, base64) and `ANDROID_KEYSTORE_PASSWORD`, with key alias `onvoie`. Local builds without them are signed with the debug key and can't update an app installed from GitHub.

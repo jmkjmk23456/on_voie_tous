@@ -21,25 +21,26 @@ android {
         versionName = "0.12-android." + (System.getenv("GITHUB_RUN_NUMBER") ?: "dev")
     }
 
-    // Fixed key so that newer APKs install as updates over older ones.
-    // It lives in the repo on purpose: this app is only sideloaded, not published in a store.
+    // Fixed key so that newer APKs install as updates over older ones. CI writes it from
+    // the ANDROID_KEYSTORE_* secrets; without them, release builds fall back to the debug key.
+    val keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val keystore = file("signing.p12")
     signingConfigs {
-        create("sideload") {
-            storeFile = file("signing.p12")
-            storeType = "pkcs12"
-            storePassword = "onvoietous"
-            keyAlias = "onvoie"
-            keyPassword = "onvoietous"
+        if (keystorePassword != null && keystore.exists()) {
+            create("sideload") {
+                storeFile = keystore
+                storeType = "pkcs12"
+                storePassword = keystorePassword
+                keyAlias = "onvoie"
+                keyPassword = keystorePassword
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("sideload")
-        }
-        debug {
-            signingConfig = signingConfigs.getByName("sideload")
+            signingConfig = signingConfigs.findByName("sideload") ?: signingConfigs.getByName("debug")
         }
     }
 
