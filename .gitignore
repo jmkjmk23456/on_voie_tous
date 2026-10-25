@@ -1,1 +1,4 @@
 web-ext-artifacts/
+
+# Local copy of the Android signing key, never commit
+/signing/
