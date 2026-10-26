@@ -8,8 +8,8 @@
 
 In vielen französischen Bahnhöfen erscheint das Gleis erst etwa 20 Minuten vor der Abfahrt. Diese App zeigt die offiziellen Abfahrtstafeln der Bahngesellschaften an und ergänzt bei jedem Zug eine Prognose, an welchem Gleis er voraussichtlich abfährt, zum Beispiel:
 
-> **C (80%)** heißt: Gleis C mit 80 % Wahrscheinlichkeit.
-> **8 | 10 (46%)** heißt: Die Bahn meldet schon Gleis 8, die Prognose tippt auf Gleis 10.
+- **C (80%)** heißt: Gleis C mit 80 % Wahrscheinlichkeit.
+- **8 | 10 (46%)** heißt: Die Bahn meldet schon Gleis 8, die Prognose tippt auf Gleis 10.
 
 Das funktioniert auf den Abfahrtstafeln von
 
