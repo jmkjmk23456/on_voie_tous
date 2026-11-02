@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/lib.php';
+require __DIR__ . '/model.php';
 
 check_token($argv[1] ?? null);
 header('Content-Type: text/plain; charset=utf-8');
@@ -38,6 +39,7 @@ $bodies = fetch_all($urls);
 $stateFile = "$dir/state.json";
 $state = is_file($stateFile) ? (json_decode((string)file_get_contents($stateFile), true) ?: []) : [];
 $lines = [];
+$parsed = [];
 $ok = ['sz' => 0, 'tr' => 0];
 $changed = 0;
 foreach ($urls as $key => $url) {
@@ -47,6 +49,7 @@ foreach ($urls as $key => $url) {
     if ($rows === null) {
         continue;
     }
+    $parsed[$key] = $rows;
     $ok[$source]++;
     $hash = md5(json_encode($rows));
     if (($state[$key] ?? null) === $hash) {
@@ -68,6 +71,36 @@ if ($lines) {
     gzclose($gz);
 }
 file_put_contents($stateFile, json_encode($state));
+
+// The current boards with predictions from the latest model, for the prediction page.
+$model = is_file("$dir/model.json") ? (json_decode((string)file_get_contents("$dir/model.json"), true) ?: []) : [];
+if (!is_dir("$dir/latest")) {
+    mkdir("$dir/latest", 0750);
+}
+foreach ($stations as $slug => $station) {
+    $board = $parsed["sz/$slug"] ?? null;
+    if ($board === null) {
+        continue;
+    }
+    $tracks = [];
+    foreach ($parsed["tr/$slug"] ?? [] as $row) {
+        $number = train_number($row['number'] ?? '');
+        if ($number !== '' && str_contains($row['stop'] ?? '', 'CZPTT')) {
+            $tracks[$number] ??= $row['schedTrack'] ?? null;
+        }
+    }
+    foreach ($board as &$row) {
+        $number = train_number($row['train']);
+        $row['schedTrack'] = $tracks[$number] ?? null;
+        $row['shown'] = parse_platform($row['platform']);
+        $row['prediction'] = $number === '' ? [] : predict($model,
+            model_keys($slug, $number, $row['schedTrack'], $row['line'], $row['dest'], $row['train']));
+    }
+    unset($row);
+    file_put_contents("$dir/latest/$slug.json", json_encode(
+        ['t' => $now->format(DATE_ATOM), 'name' => $station['name'], 'rows' => $board],
+        JSON_UNESCAPED_UNICODE));
+}
 
 $status = sprintf("%s sz %d/%d tr %d/%d changed %d %.1fs\n", $now->format(DATE_ATOM),
     $ok['sz'], count($stations), $ok['tr'], count($stations), $changed, microtime(true) - $started);

@@ -1,0 +1,260 @@
+<?php
+// A frequency model for platforms and sections: where did this train, or failing
+// that trains from the same planned track, or the same line and destination,
+// leave from on previous days? Older days count less (DECAY per day).
+//
+// It's the baseline a gradient-boosted model would have to beat, and it works
+// from the second day of collecting on.
+declare(strict_types=1);
+
+const DECAY = 0.95;
+const TARGETS = ['platform', 'section'];
+const LEVELS = ['train', 'track', 'line'];
+
+/**
+ * Splits what an SŽ board shows into platform, section and track:
+ * "6J" → 6, J · "6" → 6, whole · "3 / 4 A-B" → 3, A-B, track 4 · "4 / 14J" → 4, J, track 14
+ */
+function parse_platform(string $raw): ?array
+{
+    $raw = trim(str_replace(['«', '»'], '', $raw));
+    if ($raw === '' || $raw === '–' || $raw === '-') {
+        return null;
+    }
+    $parts = array_map('trim', explode('/', $raw, 2));
+    if (!preg_match('/^(\d+)\s*([A-Za-z](?:\s*-\s*[A-Za-z])?)?$/', $parts[0], $left)) {
+        return ['platform' => strtoupper($parts[0]), 'section' => 'ganz', 'track' => null];
+    }
+    $section = $left[2] ?? '';
+    $track = null;
+    if (isset($parts[1]) && preg_match('/^(\d+[a-z]?)?\s*([A-Z](?:\s*-\s*[A-Z])?)?$/', $parts[1], $right)) {
+        $track = ($right[1] ?? '') !== '' ? $right[1] : null;
+        if ($section === '') {
+            $section = $right[2] ?? '';
+        }
+    }
+    $section = strtoupper(str_replace(' ', '', $section));
+    return ['platform' => $left[1], 'section' => $section === '' ? 'ganz' : $section, 'track' => $track];
+}
+
+/** "Os 9151" → "9151", so SŽ and Transitous trains can be matched. */
+function train_number(string $train): string
+{
+    return preg_match('/(\d+)\s*$/', $train, $m) ? ltrim($m[1], '0') : '';
+}
+
+/** The board's "HH:MM" as a date-time near the moment it was read. */
+function board_time(DateTimeImmutable $seen, string $hhmm): ?DateTimeImmutable
+{
+    if (!preg_match('/^(\d{1,2}):(\d{2})$/', $hhmm, $m)) {
+        return null;
+    }
+    $time = $seen->setTime((int)$m[1], (int)$m[2]);
+    $diff = $time->getTimestamp() - $seen->getTimestamp();
+    if ($diff > 12 * 3600) {
+        $time = $time->modify('-1 day');
+    } elseif ($diff < -12 * 3600) {
+        $time = $time->modify('+1 day');
+    }
+    return $time;
+}
+
+/**
+ * Condenses one day file into one observation per train that got a platform:
+ * the platform it finally left from, when that was first shown, and the
+ * features known in advance (planned track, line, destination).
+ */
+function summarize_day(string $file, string $date): array
+{
+    $zone = new DateTimeZone('Europe/Prague');
+    $trains = [];
+    $tracks = [];
+    $gz = gzopen($file, 'rb');
+    while (($line = gzgets($gz, 16 * 1024 * 1024)) !== false) {
+        $record = json_decode($line, true);
+        if (!is_array($record)) {
+            continue;
+        }
+        $seen = new DateTimeImmutable($record['t']);
+        $station = $record['st'];
+        if ($record['src'] === 'tr') {
+            foreach ($record['rows'] as $row) {
+                $number = train_number($row['number'] ?? '');
+                $when = $row['schedDep'] ?? $row['schedArr'] ?? null;
+                if ($number === '' || $when === null || !str_contains($row['stop'] ?? '', 'CZPTT')
+                    || (new DateTimeImmutable($when))->setTimezone($zone)->format('Y-m-d') !== $date) {
+                    continue;
+                }
+                $tracks["$station|$number"] ??= $row['schedTrack'] ?? null;
+            }
+            continue;
+        }
+        foreach ($record['rows'] as $row) {
+            $number = train_number($row['train'] ?? '');
+            $departure = board_time($seen, $row['time'] ?? '');
+            if ($number === '' || $departure === null || $departure->format('Y-m-d') !== $date) {
+                continue;
+            }
+            $key = "$station|$number";
+            $train = $trains[$key] ?? [
+                'st' => $station, 'date' => $date, 'no' => $number, 'train' => $row['train'],
+                'line' => $row['line'], 'dest' => $row['dest'], 'time' => $row['time'],
+                'shown' => null, 'firstShown' => null, 'firstSeen' => null,
+            ];
+            $actual = board_time($seen, $row['actual'] ?? '') ?? $departure;
+            $train['delay'] = intdiv($actual->getTimestamp() - $departure->getTimestamp(), 60);
+            if (parse_platform($row['platform'] ?? '') !== null) {
+                $train['shown'] = $row['platform'];
+                if ($train['firstSeen'] === null) {
+                    $train['firstShown'] = $row['platform'];
+                    $train['firstSeen'] = intdiv($actual->getTimestamp() - $seen->getTimestamp(), 60);
+                }
+            }
+            $trains[$key] = $train;
+        }
+    }
+    gzclose($gz);
+
+    $observations = [];
+    foreach ($trains as $key => $train) {
+        $platform = $train['shown'] === null ? null : parse_platform($train['shown']);
+        if ($platform === null) {
+            continue;
+        }
+        $observations[] = [
+            'st' => $train['st'], 'date' => $date, 'no' => $train['no'], 'train' => $train['train'],
+            'line' => $train['line'], 'dest' => $train['dest'], 'time' => $train['time'],
+            'delay' => $train['delay'], 'schedTrack' => $tracks[$key] ?? null,
+            'shown' => $train['shown'], 'platform' => $platform['platform'], 'section' => $platform['section'],
+            'changed' => $train['firstShown'] !== $train['shown'],
+            'lead' => $train['firstSeen'],
+        ];
+    }
+    return $observations;
+}
+
+/** Keys for the three levels, from the most to the least specific. */
+function model_keys(string $station, string $number, ?string $track, string $line, string $dest, string $train): array
+{
+    $category = strtok($train, ' ') ?: '';
+    return [
+        'train' => "$station|$number",
+        'track' => $track === null || $track === '' ? null : "$station|$track",
+        'line' => "$station|" . ($line !== '' && $line !== '–' ? $line : $category) . "|$dest",
+    ];
+}
+
+/** @param array<string, array> $summaries observations per date */
+function build_model(array $summaries, string $today): array
+{
+    $model = [];
+    $ref = new DateTimeImmutable($today);
+    foreach ($summaries as $date => $observations) {
+        $age = (int)(new DateTimeImmutable($date))->diff($ref)->format('%a');
+        $weight = DECAY ** $age;
+        foreach ($observations as $o) {
+            $keys = model_keys($o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
+            foreach (LEVELS as $level) {
+                if ($keys[$level] === null) {
+                    continue;
+                }
+                foreach (TARGETS as $target) {
+                    $model[$target][$level][$keys[$level]][$o[$target]] =
+                        ($model[$target][$level][$keys[$level]][$o[$target]] ?? 0) + $weight;
+                }
+            }
+        }
+    }
+    return $model;
+}
+
+/**
+ * Prediction per target: the most likely value, its probability, the runner-up,
+ * and which level it came from. $levels allows evaluating a restricted model.
+ */
+function predict(array $model, array $keys, array $levels = LEVELS): array
+{
+    $result = [];
+    foreach (TARGETS as $target) {
+        foreach ($levels as $level) {
+            $counts = $keys[$level] === null ? null : ($model[$target][$level][$keys[$level]] ?? null);
+            if (!$counts) {
+                continue;
+            }
+            arsort($counts);
+            $total = array_sum($counts);
+            $values = array_keys($counts);
+            $result[$target] = [
+                'value' => (string)$values[0],
+                'p' => round($counts[$values[0]] / $total, 3),
+                'alt' => isset($values[1]) ? (string)$values[1] : null,
+                'level' => $level,
+                'n' => round($total, 1),
+            ];
+            break;
+        }
+    }
+    return $result;
+}
+
+/**
+ * For each day, predicts every train with a model built only from the days
+ * before it, and compares with where it actually left from.
+ */
+function evaluate(array $summaries, array $stations): array
+{
+    ksort($summaries);
+    $days = [];
+    $calibration = [];
+    $previous = [];
+    foreach ($summaries as $date => $observations) {
+        $model = build_model($previous, $date);
+        $per = [];
+        foreach ($observations as $o) {
+            $s = &$per[$o['st']];
+            $s ??= ['n' => 0, 'covered' => 0, 'platform' => 0, 'section' => 0, 'sectionN' => 0,
+                'trackCovered' => 0, 'trackPlatform' => 0, 'changed' => 0, 'leads' => []];
+            $s['n']++;
+            $s['changed'] += $o['changed'] ? 1 : 0;
+            if ($o['lead'] !== null) {
+                $s['leads'][] = $o['lead'];
+            }
+            $keys = model_keys($o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
+            $guess = predict($model, $keys);
+            if (isset($guess['platform'])) {
+                $hit = $guess['platform']['value'] === $o['platform'];
+                $s['covered']++;
+                $s['platform'] += $hit ? 1 : 0;
+                $bin = min(9, (int)floor($guess['platform']['p'] * 10));
+                $calibration[$date][$bin][0] = ($calibration[$date][$bin][0] ?? 0) + 1;
+                $calibration[$date][$bin][1] = ($calibration[$date][$bin][1] ?? 0) + ($hit ? 1 : 0);
+            }
+            if (isset($guess['section'])) {
+                $s['sectionN']++;
+                $s['section'] += $guess['section']['value'] === $o['section'] ? 1 : 0;
+            }
+            $byTrack = predict($model, $keys, ['track']);
+            if (isset($byTrack['platform'])) {
+                $s['trackCovered']++;
+                $s['trackPlatform'] += $byTrack['platform']['value'] === $o['platform'] ? 1 : 0;
+            }
+            unset($s);
+        }
+        foreach ($per as $station => $s) {
+            sort($s['leads']);
+            $days[] = [
+                'date' => $date, 'st' => $station, 'n' => $s['n'], 'covered' => $s['covered'],
+                'platform' => $s['platform'], 'sectionN' => $s['sectionN'], 'section' => $s['section'],
+                'trackCovered' => $s['trackCovered'], 'trackPlatform' => $s['trackPlatform'],
+                'changed' => $s['changed'],
+                'leadMedian' => $s['leads'] ? $s['leads'][intdiv(count($s['leads']), 2)] : null,
+            ];
+        }
+        $previous[$date] = $observations;
+    }
+    return [
+        'stations' => array_map(fn($s) => $s['name'], $stations),
+        'days' => $days,
+        'calibration' => $calibration,
+    ];
+}

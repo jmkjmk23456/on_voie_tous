@@ -1,6 +1,6 @@
 Options -Indexes
 
-# Only collect.php and export.php are meant to be called, both with the token.
-<FilesMatch "^(config|config\.example|lib|stations)\.php$">
+# Only collect.php, train.php and export.php are meant to be called, all with the token.
+<FilesMatch "^(config|config\.example|lib|model|stations)\.php$">
     Require all denied
 </FilesMatch>
