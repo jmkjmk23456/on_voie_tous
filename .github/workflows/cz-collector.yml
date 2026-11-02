@@ -1,0 +1,34 @@
+# Uploads the Czech board collector (cz/collector) to the web space via FTPS.
+# Repository secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, CZ_COLLECTOR_TOKEN
+name: Deploy Czech collector
+
+on:
+  push:
+    branches: [master]
+    paths: ['cz/collector/**', '.github/workflows/cz-collector.yml']
+  workflow_dispatch:
+
+concurrency: cz-collector
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write config.php
+        env:
+          TOKEN: ${{ secrets.CZ_COLLECTOR_TOKEN }}
+        run: |
+          test ${#TOKEN} -ge 16
+          printf "<?php\nreturn ['token' => '%s'];\n" "$TOKEN" > cz/collector/config.php
+
+      - name: Upload via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./cz/collector/
+          server-dir: ./gleisprognose-cz/

@@ -2,3 +2,8 @@ web-ext-artifacts/
 
 # Local copy of the Android signing key, never commit
 /signing/
+
+# Czech collector: server-only token and collected data
+/cz/collector/config.php
+/cz/collector/data/*
+!/cz/collector/data/.htaccess

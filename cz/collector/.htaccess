@@ -1,0 +1,6 @@
+Options -Indexes
+
+# Only collect.php and export.php are meant to be called, both with the token.
+<FilesMatch "^(config|config\.example|lib|stations)\.php$">
+    Require all denied
+</FilesMatch>
