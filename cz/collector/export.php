@@ -9,6 +9,19 @@ require __DIR__ . '/lib.php';
 check_token(null);
 $dir = data_dir();
 $day = (string)($_GET['day'] ?? '');
+$json = (string)($_GET['json'] ?? '');
+
+// export.php?token=…&json=stats | model | latest/praha-hl-n | summary/2026-11-03
+if ($json !== '') {
+    $file = "$dir/$json.json";
+    if (!preg_match('#^(stats|model|latest/[a-z-]+|summary/\d{4}-\d{2}-\d{2})$#', $json) || !is_file($file)) {
+        http_response_code(404);
+        exit("No such file.\n");
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    readfile($file);
+    exit;
+}
 
 if ($day !== '') {
     $file = "$dir/$day.jsonl.gz";
