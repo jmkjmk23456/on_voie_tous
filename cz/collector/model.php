@@ -1,15 +1,20 @@
 <?php
-// A frequency model for platforms and sections: where did this train, or failing
-// that trains from the same planned track, or the same line and destination,
-// leave from on previous days? Older days count less (DECAY per day).
+// A frequency model for platforms and sections: where did this train, trains from
+// the same planned track, trains of the same line and destination, and all trains
+// at the station leave from on previous days? Older days count less (DECAY per
+// day). Each level is shrunk towards the next more general one with weight
+// SMOOTHING, so a single observation doesn't become a 100 % prediction.
 //
 // It's the baseline a gradient-boosted model would have to beat, and it works
 // from the second day of collecting on.
 declare(strict_types=1);
 
 const DECAY = 0.95;
+// Chosen on 2–3 Nov: 2 gave the best log loss and the best calibrated probabilities.
+const SMOOTHING = 2.0;
 const TARGETS = ['platform', 'section'];
-const LEVELS = ['train', 'track', 'line'];
+// From the most to the least specific.
+const LEVELS = ['train', 'track', 'line', 'station'];
 
 /**
  * Splits what an SŽ board shows into platform, section and track:
@@ -133,7 +138,7 @@ function summarize_day(string $file, string $date): array
     return $observations;
 }
 
-/** Keys for the three levels, from the most to the least specific. */
+/** Keys for each level, from the most to the least specific. */
 function model_keys(string $station, string $number, ?string $track, string $line, string $dest, string $train): array
 {
     $category = strtok($train, ' ') ?: '';
@@ -141,6 +146,7 @@ function model_keys(string $station, string $number, ?string $track, string $lin
         'train' => "$station|$number",
         'track' => $track === null || $track === '' ? null : "$station|$track",
         'line' => "$station|" . ($line !== '' && $line !== '–' ? $line : $category) . "|$dest",
+        'station' => $station,
     ];
 }
 
@@ -170,29 +176,44 @@ function build_model(array $summaries, string $today): array
 
 /**
  * Prediction per target: the most likely value, its probability, the runner-up,
- * and which level it came from. $levels allows evaluating a restricted model.
+ * the most specific level that contributed, and that level's (weighted) count.
+ * $levels allows evaluating a restricted model.
  */
 function predict(array $model, array $keys, array $levels = LEVELS): array
 {
     $result = [];
     foreach (TARGETS as $target) {
-        foreach ($levels as $level) {
+        $dist = null;
+        $used = null;
+        foreach (array_reverse($levels) as $level) {
             $counts = $keys[$level] === null ? null : ($model[$target][$level][$keys[$level]] ?? null);
             if (!$counts) {
                 continue;
             }
-            arsort($counts);
             $total = array_sum($counts);
-            $values = array_keys($counts);
-            $result[$target] = [
-                'value' => (string)$values[0],
-                'p' => round($counts[$values[0]] / $total, 3),
-                'alt' => isset($values[1]) ? (string)$values[1] : null,
-                'level' => $level,
-                'n' => round($total, 1),
-            ];
-            break;
+            if ($dist === null) {
+                $dist = array_map(fn($c) => $c / $total, $counts);
+            } else {
+                $mixed = [];
+                foreach (array_keys($counts + $dist) as $value) {
+                    $mixed[$value] = (($counts[$value] ?? 0) + SMOOTHING * ($dist[$value] ?? 0)) / ($total + SMOOTHING);
+                }
+                $dist = $mixed;
+            }
+            $used = [$level, $total];
         }
+        if ($dist === null) {
+            continue;
+        }
+        arsort($dist);
+        $values = array_keys($dist);
+        $result[$target] = [
+            'value' => (string)$values[0],
+            'p' => round($dist[$values[0]], 3),
+            'alt' => isset($values[1]) ? (string)$values[1] : null,
+            'level' => $used[0],
+            'n' => round($used[1], 1),
+        ];
     }
     return $result;
 }
