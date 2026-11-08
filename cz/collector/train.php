@@ -5,6 +5,7 @@
 //
 // data/summary/YYYY-MM-DD.json  one observation per train and day
 // data/model.json               model from all days, used by collect.php for live predictions
+// data/history.json             each train's platforms on the last 14 days
 // data/stats.json               day-by-day evaluation, shown on the statistics page
 declare(strict_types=1);
 
@@ -39,6 +40,16 @@ foreach (glob("$dir/*.jsonl.gz") ?: [] as $file) {
     $summaries[$date] = json_decode((string)file_get_contents($summaryFile), true) ?: [];
 }
 ksort($summaries);
+
+// Where each train left from on the last 14 days, for the details on the prediction page.
+$history = [];
+foreach (array_slice($summaries, -14, null, true) as $date => $observations) {
+    foreach ($observations as $o) {
+        $history["{$o['st']}|{$o['no']}"][] = [$date, $o['shown']];
+    }
+}
+file_put_contents("$dir/history.json.tmp", json_encode($history, JSON_UNESCAPED_UNICODE));
+rename("$dir/history.json.tmp", "$dir/history.json");
 
 $model = build_model($summaries, $today);
 file_put_contents("$dir/model.json.tmp", json_encode($model, JSON_UNESCAPED_UNICODE));

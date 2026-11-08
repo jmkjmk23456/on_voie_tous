@@ -13,8 +13,19 @@ const DECAY = 0.95;
 // Chosen on 2–3 Nov: 2 gave the best log loss and the best calibrated probabilities.
 const SMOOTHING = 2.0;
 const TARGETS = ['platform', 'section'];
-// From the most to the least specific.
-const LEVELS = ['train', 'track', 'line', 'station'];
+// From the most to the least specific. "trainday" is the same train on the same
+// kind of day: rj 170 left Praha hl.n. from platform 4 on weekdays, 6 at weekends.
+const LEVELS = ['trainday', 'train', 'track', 'line', 'station'];
+// Czech public holidays, run like weekends.
+const HOLIDAYS = ['2026-11-17', '2026-12-24', '2026-12-25', '2026-12-26', '2027-01-01',
+    '2027-03-26', '2027-03-29', '2027-05-01', '2027-05-08', '2027-07-05', '2027-07-06',
+    '2027-09-28', '2027-10-28', '2027-11-17', '2027-12-24', '2027-12-25', '2027-12-26'];
+
+/** "W" for working days, "WE" for weekends and public holidays. */
+function day_type(string $date): string
+{
+    return in_array($date, HOLIDAYS, true) || (int)date('N', strtotime($date)) >= 6 ? 'WE' : 'W';
+}
 
 /**
  * Splits what an SŽ board shows into platform, section and track:
@@ -139,10 +150,11 @@ function summarize_day(string $file, string $date): array
 }
 
 /** Keys for each level, from the most to the least specific. */
-function model_keys(string $station, string $number, ?string $track, string $line, string $dest, string $train): array
+function model_keys(string $date, string $station, string $number, ?string $track, string $line, string $dest, string $train): array
 {
     $category = strtok($train, ' ') ?: '';
     return [
+        'trainday' => "$station|$number|" . day_type($date),
         'train' => "$station|$number",
         'track' => $track === null || $track === '' ? null : "$station|$track",
         'line' => "$station|" . ($line !== '' && $line !== '–' ? $line : $category) . "|$dest",
@@ -159,7 +171,7 @@ function build_model(array $summaries, string $today): array
         $age = (int)(new DateTimeImmutable($date))->diff($ref)->format('%a');
         $weight = DECAY ** $age;
         foreach ($observations as $o) {
-            $keys = model_keys($o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
+            $keys = model_keys($o['date'], $o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
             foreach (LEVELS as $level) {
                 if ($keys[$level] === null) {
                     continue;
@@ -177,6 +189,7 @@ function build_model(array $summaries, string $today): array
 /**
  * Prediction per target: the most likely value, its probability, the runner-up,
  * the most specific level that contributed, and that level's (weighted) count.
+ * "why" lists what each level saw, most specific first, as [level, count, {value: count}].
  * $levels allows evaluating a restricted model.
  */
 function predict(array $model, array $keys, array $levels = LEVELS): array
@@ -185,12 +198,16 @@ function predict(array $model, array $keys, array $levels = LEVELS): array
     foreach (TARGETS as $target) {
         $dist = null;
         $used = null;
+        $why = [];
         foreach (array_reverse($levels) as $level) {
             $counts = $keys[$level] === null ? null : ($model[$target][$level][$keys[$level]] ?? null);
             if (!$counts) {
                 continue;
             }
             $total = array_sum($counts);
+            arsort($counts);
+            array_unshift($why, [$level, round($total, 1),
+                array_map(fn($c) => round($c, 1), array_slice($counts, 0, 4, true))]);
             if ($dist === null) {
                 $dist = array_map(fn($c) => $c / $total, $counts);
             } else {
@@ -213,6 +230,7 @@ function predict(array $model, array $keys, array $levels = LEVELS): array
             'alt' => isset($values[1]) ? (string)$values[1] : null,
             'level' => $used[0],
             'n' => round($used[1], 1),
+            'why' => $why,
         ];
     }
     return $result;
@@ -240,7 +258,7 @@ function evaluate(array $summaries, array $stations): array
             if ($o['lead'] !== null) {
                 $s['leads'][] = $o['lead'];
             }
-            $keys = model_keys($o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
+            $keys = model_keys($o['date'], $o['st'], $o['no'], $o['schedTrack'], $o['line'], $o['dest'], $o['train']);
             $guess = predict($model, $keys);
             if (isset($guess['platform'])) {
                 $hit = $guess['platform']['value'] === $o['platform'];

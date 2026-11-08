@@ -74,6 +74,7 @@ file_put_contents($stateFile, json_encode($state));
 
 // The current boards with predictions from the latest model, for the prediction page.
 $model = is_file("$dir/model.json") ? (json_decode((string)file_get_contents("$dir/model.json"), true) ?: []) : [];
+$history = is_file("$dir/history.json") ? (json_decode((string)file_get_contents("$dir/history.json"), true) ?: []) : [];
 if (!is_dir("$dir/latest")) {
     mkdir("$dir/latest", 0750);
 }
@@ -93,8 +94,11 @@ foreach ($stations as $slug => $station) {
         $number = train_number($row['train']);
         $row['schedTrack'] = $tracks[$number] ?? null;
         $row['shown'] = parse_platform($row['platform']);
+        // The board only has times of day; a departure long before now is tomorrow's.
+        $date = board_time($now, $row['time'])?->format('Y-m-d') ?? $now->format('Y-m-d');
         $row['prediction'] = $number === '' ? [] : predict($model,
-            model_keys($slug, $number, $row['schedTrack'], $row['line'], $row['dest'], $row['train']));
+            model_keys($date, $slug, $number, $row['schedTrack'], $row['line'], $row['dest'], $row['train']));
+        $row['history'] = $history["$slug|$number"] ?? [];
     }
     unset($row);
     file_put_contents("$dir/latest/$slug.json", json_encode(

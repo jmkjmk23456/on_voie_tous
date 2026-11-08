@@ -15,4 +15,7 @@ return [
     'hradec-kralove-hl-n' => ['name' => 'Hradec Králové hl.n.', 'sz' => 1529, 'czptt' => '53120'],
     'liberec'           => ['name' => 'Liberec',              'sz' => 2358, 'czptt' => '54212'],
     'ceske-budejovice'  => ['name' => 'České Budějovice',     'sz' => 626,  'czptt' => '73282'],
+    // Added on 8 Nov on request; Plzeň mostly announces platforms early.
+    'plzen-hl-n'        => ['name' => 'Plzeň hl.n.',          'sz' => 3341, 'czptt' => '73275'],
+    'decin-hl-n'        => ['name' => 'Děčín hl.n.',          'sz' => 747,  'czptt' => '55659'],
 ];
