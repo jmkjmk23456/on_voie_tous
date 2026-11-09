@@ -18,4 +18,6 @@ return [
     // Added on 8 Nov on request; Plzeň mostly announces platforms early.
     'plzen-hl-n'        => ['name' => 'Plzeň hl.n.',          'sz' => 3341, 'czptt' => '73275'],
     'decin-hl-n'        => ['name' => 'Děčín hl.n.',          'sz' => 747,  'czptt' => '55659'],
+    // Added on 9 Nov on request (the main station, not Karlovy Vary dolní nádraží).
+    'karlovy-vary'      => ['name' => 'Karlovy Vary',         'sz' => 1860, 'czptt' => '75875'],
 ];
