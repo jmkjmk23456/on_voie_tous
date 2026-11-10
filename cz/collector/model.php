@@ -59,6 +59,37 @@ function train_number(string $train): string
     return preg_match('/(\d+)\s*$/', $train, $m) ? ltrim($m[1], '0') : '';
 }
 
+/** Replacement buses get their own board rows, e.g. "BUS 6200" next to "Os 6200". */
+function is_bus(string $train): bool
+{
+    return (bool)preg_match('/^bus\b/i', $train);
+}
+
+/** Whether a board notice mentions rail replacement or engineering works. */
+function mentions_replacement(string $note): bool
+{
+    return (bool)preg_match('/náhradn|výluk|\bbus\b/iu', $note);
+}
+
+/**
+ * Trains a replacement bus stands in for from this station on: a bus row with the
+ * same number, or SŽ's 6-digit bus numbers (10/30 + train number, "BUS 300939").
+ * @return array<string, true> train numbers
+ */
+function replaced_numbers(array $rows): array
+{
+    $replaced = [];
+    foreach ($rows as $row) {
+        if (is_bus($row['train'] ?? '') && ($number = train_number($row['train'])) !== '') {
+            $replaced[$number] = true;
+            if (strlen($number) === 6) {
+                $replaced[ltrim(substr($number, 2), '0')] = true;
+            }
+        }
+    }
+    return $replaced;
+}
+
 /** The board's "HH:MM" as a date-time near the moment it was read. */
 function board_time(DateTimeImmutable $seen, string $hhmm): ?DateTimeImmutable
 {
@@ -108,15 +139,16 @@ function summarize_day(string $file, string $date): array
         foreach ($record['rows'] as $row) {
             $number = train_number($row['train'] ?? '');
             $departure = board_time($seen, $row['time'] ?? '');
-            if ($number === '' || $departure === null || $departure->format('Y-m-d') !== $date) {
+            if ($number === '' || is_bus($row['train']) || $departure === null || $departure->format('Y-m-d') !== $date) {
                 continue;
             }
             $key = "$station|$number";
             $train = $trains[$key] ?? [
                 'st' => $station, 'date' => $date, 'no' => $number, 'train' => $row['train'],
                 'line' => $row['line'], 'dest' => $row['dest'], 'time' => $row['time'],
-                'shown' => null, 'firstShown' => null, 'firstSeen' => null,
+                'shown' => null, 'firstShown' => null, 'firstSeen' => null, 'replacement' => false,
             ];
+            $train['replacement'] = $train['replacement'] || mentions_replacement($row['note'] ?? '');
             $actual = board_time($seen, $row['actual'] ?? '') ?? $departure;
             $train['delay'] = intdiv($actual->getTimestamp() - $departure->getTimestamp(), 60);
             if (parse_platform($row['platform'] ?? '') !== null) {
@@ -144,6 +176,7 @@ function summarize_day(string $file, string $date): array
             'shown' => $train['shown'], 'platform' => $platform['platform'], 'section' => $platform['section'],
             'changed' => $train['firstShown'] !== $train['shown'],
             'lead' => $train['firstSeen'],
+            'replacement' => $train['replacement'],
         ];
     }
     return $observations;
@@ -288,7 +321,7 @@ function evaluate(array $summaries, array $stations): array
                     $guess['platform']['value'] === $o['platform'] ? 1 : 0,
                     isset($guess['section']) ? ($guess['section']['value'] === $o['section'] ? 1 : 0) : null,
                     isset($byTrack['platform']) ? ($byTrack['platform']['value'] === $o['platform'] ? 1 : 0) : null,
-                    $o['changed'] ? 1 : 0, $o['lead'],
+                    $o['changed'] ? 1 : 0, $o['lead'], !empty($o['replacement']) ? 1 : 0,
                 ];
             }
         }
@@ -310,7 +343,7 @@ function evaluate(array $summaries, array $stations): array
         'calibration' => $calibration,
         // One row per predicted train, for filtering on the statistics page.
         'trainFields' => ['date', 'st', 'time', 'category', 'line', 'dest', 'level', 'p',
-            'platformHit', 'sectionHit', 'trackHit', 'changed', 'lead'],
+            'platformHit', 'sectionHit', 'trackHit', 'changed', 'lead', 'replacement'],
         'trains' => $trains,
     ];
 }

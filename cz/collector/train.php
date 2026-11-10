@@ -30,17 +30,21 @@ $today = (new DateTimeImmutable('now', new DateTimeZone('Europe/Prague')))->form
 if (!is_dir("$dir/summary")) {
     mkdir("$dir/summary", 0750);
 }
+// Bump when summarize_day() changes, so all days are summarized again.
+const SUMMARY_VERSION = '2';
+$redo = @file_get_contents("$dir/summary/version") !== SUMMARY_VERSION;
 $summaries = [];
 foreach (glob("$dir/*.jsonl.gz") ?: [] as $file) {
     $date = basename($file, '.jsonl.gz');
     $summaryFile = "$dir/summary/$date.json";
-    if (!is_file($summaryFile) || filemtime($summaryFile) < filemtime($file)) {
+    if ($redo || !is_file($summaryFile) || filemtime($summaryFile) < filemtime($file)) {
         file_put_contents($summaryFile, json_encode(summarize_day($file, $date), JSON_UNESCAPED_UNICODE));
         echo "summarized $date\n";
     }
     $summaries[$date] = json_decode((string)file_get_contents($summaryFile), true) ?: [];
 }
 ksort($summaries);
+file_put_contents("$dir/summary/version", SUMMARY_VERSION);
 
 // Where each train left from on the last 14 days, for the details on the prediction page.
 $history = [];

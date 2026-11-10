@@ -90,15 +90,20 @@ foreach ($stations as $slug => $station) {
             $tracks[$number] ??= $row['schedTrack'] ?? null;
         }
     }
+    $replaced = replaced_numbers($board);
     foreach ($board as &$row) {
         $number = train_number($row['train']);
         $row['schedTrack'] = $tracks[$number] ?? null;
         $row['shown'] = parse_platform($row['platform']);
+        $row['bus'] = is_bus($row['train']);
+        // Replaced from here on: no platform to predict.
+        $row['replaced'] = !$row['bus'] && isset($replaced[$number]);
+        $row['replacement'] = mentions_replacement($row['note'] ?? '');
         // The board only has times of day; a departure long before now is tomorrow's.
         $date = board_time($now, $row['time'])?->format('Y-m-d') ?? $now->format('Y-m-d');
-        $row['prediction'] = $number === '' ? [] : predict($model,
+        $row['prediction'] = $number === '' || $row['bus'] || $row['replaced'] ? [] : predict($model,
             model_keys($date, $slug, $number, $row['schedTrack'], $row['line'], $row['dest'], $row['train']));
-        $row['history'] = $history["$slug|$number"] ?? [];
+        $row['history'] = $row['bus'] ? [] : $history["$slug|$number"] ?? [];
     }
     unset($row);
     file_put_contents("$dir/latest/$slug.json", json_encode(
