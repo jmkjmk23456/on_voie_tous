@@ -245,6 +245,7 @@ function evaluate(array $summaries, array $stations): array
     ksort($summaries);
     $days = [];
     $calibration = [];
+    $trains = [];
     $previous = [];
     foreach ($summaries as $date => $observations) {
         $model = build_model($previous, $date);
@@ -278,6 +279,18 @@ function evaluate(array $summaries, array $stations): array
                 $s['trackPlatform'] += $byTrack['platform']['value'] === $o['platform'] ? 1 : 0;
             }
             unset($s);
+            if (isset($guess['platform'])) {
+                $category = strtok($o['train'], ' ') ?: '';
+                $trains[] = [
+                    $date, $o['st'], $o['time'], $category,
+                    $o['line'] !== '' && $o['line'] !== '–' ? $o['line'] : $category, $o['dest'],
+                    $guess['platform']['level'], $guess['platform']['p'],
+                    $guess['platform']['value'] === $o['platform'] ? 1 : 0,
+                    isset($guess['section']) ? ($guess['section']['value'] === $o['section'] ? 1 : 0) : null,
+                    isset($byTrack['platform']) ? ($byTrack['platform']['value'] === $o['platform'] ? 1 : 0) : null,
+                    $o['changed'] ? 1 : 0, $o['lead'],
+                ];
+            }
         }
         foreach ($per as $station => $s) {
             sort($s['leads']);
@@ -295,5 +308,9 @@ function evaluate(array $summaries, array $stations): array
         'stations' => array_map(fn($s) => $s['name'], $stations),
         'days' => $days,
         'calibration' => $calibration,
+        // One row per predicted train, for filtering on the statistics page.
+        'trainFields' => ['date', 'st', 'time', 'category', 'line', 'dest', 'level', 'p',
+            'platformHit', 'sectionHit', 'trackHit', 'changed', 'lead'],
+        'trains' => $trains,
     ];
 }

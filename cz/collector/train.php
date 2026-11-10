@@ -7,6 +7,7 @@
 // data/model.json               model from all days, used by collect.php for live predictions
 // data/history.json             each train's platforms on the last 14 days
 // data/stats.json               day-by-day evaluation, shown on the statistics page
+// data/eval.json                the same evaluation per train, for its filters
 declare(strict_types=1);
 
 require __DIR__ . '/lib.php';
@@ -57,6 +58,10 @@ rename("$dir/model.json.tmp", "$dir/model.json");
 
 $stats = evaluate($summaries, $stations);
 $stats['generated'] = (new DateTimeImmutable('now', new DateTimeZone('Europe/Prague')))->format(DATE_ATOM);
+$evaluated = ['fields' => $stats['trainFields'], 'rows' => $stats['trains']];
+unset($stats['trainFields'], $stats['trains']);
+file_put_contents("$dir/eval.json.tmp", json_encode($evaluated, JSON_UNESCAPED_UNICODE));
+rename("$dir/eval.json.tmp", "$dir/eval.json");
 file_put_contents("$dir/stats.json.tmp", json_encode($stats, JSON_UNESCAPED_UNICODE));
 rename("$dir/stats.json.tmp", "$dir/stats.json");
 
